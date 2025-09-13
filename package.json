@@ -1,0 +1,23 @@
+{
+  "name": "estoquepro",
+  "version": "1.0.0",
+  "description": "App desktop de gerenciamento de estoque com Electron, React e SQLite.",
+  "main": "main.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "npm run build && electron .",
+    "dev": "npm run build -- --watch & electron .",
+    "electron-build": "electron-builder"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "sqlite3": "^5.1.6",
+    "xlsx": "^0.18.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.6.0",
+    "esbuild": "^0.23.0"
+  }
+}
