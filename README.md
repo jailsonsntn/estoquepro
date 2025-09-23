@@ -152,6 +152,9 @@ Dicas:
 - Bloqueios no SQLite (SQLITE_BUSY): há retry/backoff configurado e `busy_timeout`; aguarde alguns segundos e tente novamente
 - Se nenhum dado aparecer, verifique se `dadosestoque.csv` ou `DADOS.XLS` estão na pasta base e se os nomes das colunas são reconhecíveis
 
+## 👤 Autor
+- Jailson Santana
+
 ## 🧾 Licença
 A definir pelo autor do repositório.
 
