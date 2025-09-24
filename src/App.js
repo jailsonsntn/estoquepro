@@ -552,20 +552,42 @@ export default function App() {
   };
 
   const persistUpdate = (id, field, value) => {
-    const db = getDB();
-    db.run(`UPDATE estoque SET ${field} = ? WHERE id = ?`, [value, id]);
+    const attemptUpdate = (attempt=1) => {
+      const db = getDB();
+      db.run(`UPDATE estoque SET ${field} = ? WHERE id = ?`, [value, id], (err)=>{
+        if(err && err.code==='SQLITE_BUSY' && attempt < 5){
+          const delay = 120 * attempt;
+            console.warn(`UPDATE retry ${attempt} (${field}) em ${delay}ms`);
+            setTimeout(()=> attemptUpdate(attempt+1), delay);
+        }
+      });
+    };
+    attemptUpdate();
   };
 
   const persistNew = (item) => {
-    const db = getDB();
+    const doInsert = (attempt=1) => {
+      const db = getDB();
     // Novo significado: custo_total e venda_total representam valores unitários ajustados (não multiplicados pela quantidade em estoque)
     const custo_unit_ajustado = Number(item.c_medio||0) + (Number(item.c_medio||0) * (Number(item.margem||0)/100));
     const venda_total_unit = item.venda_cons; // Mantemos venda_total como equivalente ao preço de venda unitário
-    db.run(`INSERT INTO estoque (codigo, nome, unidade, ncm, sit_trib, local_estoque, qt_estoque, c_medio, margem, venda_cons, custo_total, venda_total) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [item.codigo, item.nome, item.unidade, item.ncm, item.sit_trib, item.local_estoque, item.qt_estoque, item.c_medio, item.margem || 0, item.venda_cons, custo_unit_ajustado, venda_total_unit], function(){
-        const id = this.lastID;
-        setEstoque(prev => [...prev, { ...item, id, custo_total: custo_unit_ajustado, venda_total: venda_total_unit }]);
-      });
+      db.run(`INSERT INTO estoque (codigo, nome, unidade, ncm, sit_trib, local_estoque, qt_estoque, c_medio, margem, venda_cons, custo_total, venda_total) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [item.codigo, item.nome, item.unidade, item.ncm, item.sit_trib, item.local_estoque, item.qt_estoque, item.c_medio, item.margem || 0, item.venda_cons, custo_unit_ajustado, venda_total_unit], function(err){
+          if(err && err.code==='SQLITE_BUSY' && attempt < 5){
+            const delay = 150 * attempt;
+            console.warn('INSERT retry em', delay, 'ms');
+            return setTimeout(()=> doInsert(attempt+1), delay);
+          }
+          if(!err){
+            const id = this.lastID;
+            setEstoque(prev => [...prev, { ...item, id, custo_total: custo_unit_ajustado, venda_total: venda_total_unit }]);
+          } else {
+            console.error('Falha insert item:', err);
+            flashMsg('Erro ao salvar item (lock persistente)','error');
+          }
+        });
+    };
+    doInsert();
   };
 
   const persistDelete = (ids) => {
