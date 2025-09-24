@@ -194,18 +194,16 @@ export default function EstoqueTab({
                             value={item[f] ?? ''}
                             onChange={e=> {
                               const val = ['qt_estoque','c_medio','venda_cons','margem'].includes(f) ? Number(e.target.value) : e.target.value;
-                              // Atualiza linha editável localmente
+                              // Mutar apenas a linha em edição através de um setState em nível superior (trigger re-render via flashMsg não necessário)
                               item[f] = val;
-                              // Recalcular campos derivados unitários se custo/margem/venda mudar
                               if(['c_medio','margem','venda_cons'].includes(f)) {
                                 const cMed = Number(item.c_medio)||0;
                                 const marg = Number(item.margem)||0;
                                 const custoUnit = cMed + (cMed * (marg/100));
-                                item.custo_total = custoUnit;
-                                item.venda_total = Number(item.venda_cons)||0;
+                                item.custo_total = Number(custoUnit.toFixed(2));
+                                item.venda_total = Number(Number(item.venda_cons||0).toFixed(2));
                               }
-                              // Força re-render via pequena mutação de estado (optamos por flashMsg silencioso)
-                              flashMsg('Editando (não salvo ainda)...','info');
+                              // Não exibir mais aviso de bloqueio
                             }}
                           />
                         );

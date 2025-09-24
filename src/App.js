@@ -121,7 +121,20 @@ export default function App() {
       const doSelect = (attempt=1) => db.all('SELECT * FROM estoque ORDER BY codigo', [], (err, rows) => {
         if(!err) {
           console.log(`EstoquePro: Carregados ${rows?.length || 0} itens do banco`);
-          setEstoque(rows||[]);
+          const normalized = normalizeOldTotals(rows||[]);
+          setEstoque(normalized.rows);
+          if(normalized.updatedIds.length){
+            // Atualiza em background os registros corrigidos
+            try {
+              const writeDb = new sqlite3.Database(dbPath);
+              writeDb.serialize(()=>{
+                normalized.updatedIds.forEach(u => {
+                  writeDb.run('UPDATE estoque SET custo_total = ?, venda_total = ? WHERE id = ?', [u.custo_total, u.venda_total, u.id]);
+                });
+              });
+              try { writeDb.close(); } catch(_){ }
+            } catch(exNorm){ console.error('Falha normalizar totals (write):', exNorm); }
+          }
           try { flashMsg && flashMsg(`Banco carregado: ${(rows?.length||0)} itens`); } catch(_){}
         } else {
           if (err && err.code === 'SQLITE_BUSY' && attempt < 3) {
@@ -636,13 +649,13 @@ export default function App() {
   const startEdit = (id) => {
     setEditingId(id);
     const item = estoque.find(i=>i.id===id);
-    setEditValues(item);
+    setEditValues({ ...item });
   };
   const cancelEdit = () => { setEditingId(null); setEditValues({}); };
   const saveEdit = () => {
     // Recalcular campos derivados segundo novo critério (valores unitários, não multiplicados pela quantidade)
     const custo_unit_ajustado = Number(editValues.c_medio||0) + (Number(editValues.c_medio||0) * (Number(editValues.margem||0)/100));
-    const updated = { ...editValues, custo_total: custo_unit_ajustado, venda_total: editValues.venda_cons };
+    const updated = { ...editValues, custo_total: custo_unit_ajustado, venda_total: Number(editValues.venda_cons||0) };
     setEstoque(prev => prev.map(r => r.id === updated.id ? updated : r));
     ['qt_estoque','c_medio','margem','venda_cons','custo_total','venda_total','local_estoque','nome','ncm','sit_trib','unidade','codigo'].forEach(f=>persistUpdate(updated.id, f, updated[f]));
     setEditingId(null); setEditValues({});
@@ -850,8 +863,45 @@ export default function App() {
   const reloadFromDB = () => {
   const db = new sqlite3.Database(path.join(getBaseDir(), 'estoquepro.db'));
     db.all('SELECT * FROM estoque', [], (err, rows) => {
-      if(!err) setEstoque(rows);
+      if(!err){
+        const normalized = normalizeOldTotals(rows||[]);
+        setEstoque(normalized.rows);
+        if(normalized.updatedIds.length){
+          try {
+            const writeDb = new sqlite3.Database(path.join(getBaseDir(), 'estoquepro.db'));
+            writeDb.serialize(()=>{
+              normalized.updatedIds.forEach(u => writeDb.run('UPDATE estoque SET custo_total=?, venda_total=? WHERE id=?', [u.custo_total, u.venda_total, u.id]));
+            });
+            try { writeDb.close(); } catch(_){ }
+          } catch(exNorm){ console.error('Norm reload write fail', exNorm); }
+        }
+      }
     });
+  };
+
+  // ===== Normalização de registros antigos (que armazenavam total multiplicado pela quantidade) =====
+  const normalizeOldTotals = (rows) => {
+    const updatedIds = [];
+    const fixed = rows.map(r => {
+      const qt = Number(r.qt_estoque)||0;
+      const cMed = Number(r.c_medio)||0;
+      const margem = Number(r.margem)||0;
+      let custo_total = r.custo_total;
+      let venda_total = r.venda_total;
+      const expectedOldCusto = qt ? Number((cMed * qt).toFixed(2)) : cMed;
+      const expectedOldVenda = qt ? Number(((Number(r.venda_cons)||0) * qt).toFixed(2)) : Number(r.venda_cons||0);
+      const looksOld = qt>0 && (Math.abs(Number(custo_total||0) - expectedOldCusto) < 0.01);
+      const looksOldVenda = qt>0 && (Math.abs(Number(venda_total||0) - expectedOldVenda) < 0.01);
+      if(looksOld || looksOldVenda){
+        const newCusto = Number((cMed + (cMed * (margem/100))).toFixed(2));
+        const newVenda = Number((Number(r.venda_cons)||0).toFixed(2));
+        custo_total = newCusto;
+        venda_total = newVenda;
+        updatedIds.push({ id: r.id, custo_total, venda_total });
+      }
+      return { ...r, custo_total, venda_total };
+    });
+    return { rows: fixed, updatedIds };
   };
 
   // ====== Vales (DB) ======
